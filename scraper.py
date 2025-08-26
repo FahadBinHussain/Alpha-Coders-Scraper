@@ -2,6 +2,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Folders ---
 small_folder = "small"
@@ -37,16 +38,18 @@ def get_small_image_urls(page_number):
 def download_image(url, folder):
     filename = os.path.join(folder, url.split("/")[-1])
     if os.path.exists(filename):
-        print(f"Already exists: {filename}")
-        return
-    with requests.get(url, stream=True) as r:
-        if r.status_code == 200:
-            with open(filename, "wb") as f:
-                for chunk in r.iter_content(1024):
-                    f.write(chunk)
-            print(f"Saved {filename}")
-        else:
-            print(f"Failed to download {url}")
+        return filename
+    try:
+        with requests.get(url, stream=True) as r:
+            if r.status_code == 200:
+                with open(filename, "wb") as f:
+                    for chunk in r.iter_content(1024):
+                        f.write(chunk)
+                print(f"Saved {filename}")
+                return filename
+    except Exception as e:
+        print(f"Failed to download {url}: {e}")
+    return None
 
 def get_image_id_from_url(url):
     return url.split("-")[-1].split(".")[0]
@@ -54,7 +57,6 @@ def get_image_id_from_url(url):
 def get_big_image_url_and_download(small_url):
     image_id = get_image_id_from_url(small_url)
     
-    # Extract domain and folder from small image URL
     parts = small_url.split("/")
     domain = parts[2]          # e.g., images5.alphacoders.com
     folder_number = parts[3]   # e.g., 564
@@ -63,14 +65,19 @@ def get_big_image_url_and_download(small_url):
     
     for ext in ["jpeg", "jpg", "png"]:
         big_url = f"{base_big_url}.{ext}"
-        r = requests.get(big_url, stream=True)
-        if r.status_code == 200:
-            filename = os.path.join(big_folder, f"thumb-1920-{image_id}.{ext}")
-            with open(filename, "wb") as f:
-                for chunk in r.iter_content(1024):
-                    f.write(chunk)
-            print(f"Saved {filename}")
+        filename = os.path.join(big_folder, f"thumb-1920-{image_id}.{ext}")
+        if os.path.exists(filename):
             return big_url
+        try:
+            r = requests.get(big_url, stream=True)
+            if r.status_code == 200:
+                with open(filename, "wb") as f:
+                    for chunk in r.iter_content(1024):
+                        f.write(chunk)
+                print(f"Saved {filename}")
+                return big_url
+        except Exception as e:
+            print(f"Failed {big_url}: {e}")
     print(f"Big image not found for {small_url}")
     return None
 
@@ -78,9 +85,13 @@ def get_big_image_url_and_download(small_url):
 for page in range(1, 3):
     small_urls = get_small_image_urls(page)
     print(f"Found {len(small_urls)} small images on page {page}")
-    for url in small_urls:
-        download_image(url, small_folder)
     all_small_urls.extend(small_urls)
+
+# Download small images in parallel
+with ThreadPoolExecutor(max_workers=10) as executor:
+    futures = [executor.submit(download_image, url, small_folder) for url in all_small_urls]
+    for future in as_completed(futures):
+        future.result()
 
 # Save small URLs
 with open(small_json_file, "w") as f:
@@ -88,12 +99,15 @@ with open(small_json_file, "w") as f:
 print(f"Saved all small image URLs to {small_json_file}")
 
 # --- Part 2: Big Images ---
-for small_url in all_small_urls:
-    big_url = get_big_image_url_and_download(small_url)
-    if big_url:
-        all_big_urls.append(big_url)
+big_urls = []
+with ThreadPoolExecutor(max_workers=10) as executor:
+    futures = [executor.submit(get_big_image_url_and_download, url) for url in all_small_urls]
+    for future in as_completed(futures):
+        result = future.result()
+        if result:
+            big_urls.append(result)
 
 # Save big URLs
 with open(big_json_file, "w") as f:
-    json.dump(all_big_urls, f, indent=4)
+    json.dump(big_urls, f, indent=4)
 print(f"Saved all big image URLs to {big_json_file}")
