@@ -88,26 +88,32 @@ def get_big_image_url_and_download(small_url):
 
 def get_original_image_url_and_download(small_url):
     image_id = get_image_id_from_url(small_url)
-    domain = small_url.split("/")[2]   # images3, images5, etc.
     
-    # Determine extension based on big thumb
-    ext_map = {"jpeg": "jpeg", "jpg": "jpg", "png": "png"}
-    # For simplicity, we'll try jpeg first
-    original_url = f"https://initiate.alphacoders.com/download/{domain}/{image_id}/jpeg"
+    parts = small_url.split("/")
+    domain_short = parts[2].split(".")[0]  # e.g., images3
     
-    filename = os.path.join(original_folder, f"{image_id}.jpeg")
-    if os.path.exists(filename):
-        return original_url
-    try:
-        r = requests.get(original_url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://wall.alphacoders.com/"}, stream=True)
-        if r.status_code == 200:
-            with open(filename, "wb") as f:
-                for chunk in r.iter_content(1024):
-                    f.write(chunk)
-            print(f"Saved original {filename}")
+    extensions = ["jpeg", "jpg", "png"]
+    
+    for ext in extensions:
+        original_url = f"https://initiate.alphacoders.com/download/{domain_short}/{image_id}/{ext}"
+        filename = os.path.join(original_folder, f"{image_id}.{ext}")
+        if os.path.exists(filename):
             return original_url
-    except Exception as e:
-        print(f"Failed {original_url}: {e}")
+        try:
+            r = requests.get(
+                original_url,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://wall.alphacoders.com/"},
+                stream=True
+            )
+            if r.status_code == 200:
+                with open(filename, "wb") as f:
+                    for chunk in r.iter_content(1024):
+                        f.write(chunk)
+                print(f"Saved original {filename}")
+                return original_url
+        except Exception as e:
+            print(f"Failed {original_url}: {e}")
+    
     print(f"Original image not found for {small_url}")
     return None
 
